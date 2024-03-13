@@ -23,5 +23,13 @@ namespace Server.Controllers
             var result = await userAccount.SigInAsync(login);
             return Ok(result);
         }
+
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshTokenAsync(RefreshToken token)
+        {
+            if (token == null) return BadRequest("Model is empty");
+            var result = await userAccount.RefreshTokenAsync(token);
+            return Ok(result);
+        }
     }
 }

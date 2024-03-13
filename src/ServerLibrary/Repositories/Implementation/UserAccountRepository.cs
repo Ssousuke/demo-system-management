@@ -77,10 +77,10 @@ namespace ServerLibrary.Repositories.Implementation
             if (!BCrypt.Net.BCrypt.Verify(loginUser.Password, applicationUser.Password))
                 return new LoginResponse(false, "Email or Password not valid");
 
-            var getUserRole = await context.UserRoles.FirstOrDefaultAsync(_ => _.UserId == applicationUser.Id);
+            var getUserRole = await FindUserRole(applicationUser.Id);
             if (getUserRole is null) return new LoginResponse(false, "user role not found");
 
-            var getRoleName = await context.SystemRoles.FirstOrDefaultAsync(_ => _.Id == getUserRole.RoleId);
+            var getRoleName = await FindRoleName(getUserRole.RoleId);
             if (getRoleName is null) return new LoginResponse(false, "user role not found");
 
             string jwtToken = GenerateToken(applicationUser, getRoleName!.Name!);
@@ -88,9 +88,41 @@ namespace ServerLibrary.Repositories.Implementation
             return new LoginResponse(Flag: true, Message: "Login successfully", Token: jwtToken, RefreshToken: refreshToken);
         }
 
-        private async Task<ApplicationUser> FindUserByEmail(string email)
-            => await context.ApplicationUsers.FirstOrDefaultAsync(_ => _.Email!.ToLower()!.Equals(email!.ToLower()));
+        public async Task<LoginResponse> RefreshTokenAsync(RefreshToken token)
+        {
+            if (token is null) return new LoginResponse(false, "Model is empty");
 
+            var findToken = await context.RefreshTokens.FirstOrDefaultAsync(_ => _.Token!.Equals(token.Token));
+            if (findToken is null) return new LoginResponse(false, "Refresh token is required");
+
+            // get user details by userId
+            var user = await context.ApplicationUsers.FirstOrDefaultAsync(_ => _.Id == findToken.UserId);
+            if (user is null) return new LoginResponse(false, "Refresh token could not be generated because user not found");
+
+            var userRole = await FindUserRole(user.Id);
+            var roleName = await FindRoleName(userRole.RoleId);
+            string jwtToken = GenerateToken(user, roleName.Name);
+            string refreshToken = GenerateRefreshToken();
+
+            var updateRefreshToken = await context.RefreshTokens.FirstOrDefaultAsync(_ => _.UserId == user.Id);
+            if (updateRefreshToken is null) return new LoginResponse(false, "Refresh token could not be generated because user has not singed in");
+
+            updateRefreshToken.Token = refreshToken;
+            await context.SaveChangesAsync();
+            return new LoginResponse(true, "Token refreshed successfully", jwtToken, refreshToken);
+        }
+
+        private async Task<UserRole> FindUserRole(Guid userId)
+             => await context.UserRoles.FirstOrDefaultAsync(_ => _.UserId == userId);
+
+        private async Task<SystemRole> FindRoleName(int roleId)
+             => await context.SystemRoles.FirstOrDefaultAsync(_ => _.Id == roleId);
+
+        private async Task<ApplicationUser> FindUserByEmail(string email)
+             => await context.ApplicationUsers.FirstOrDefaultAsync(_ => _.Email!.ToLower()!.Equals(email!.ToLower()));
+
+        private string GenerateRefreshToken()
+             => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
         private async Task<T> AddToDatabase<T>(T model)
         {
@@ -120,10 +152,7 @@ namespace ServerLibrary.Repositories.Implementation
                 signingCredentials: credentials
             );
 
-
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-
-        private string GenerateRefreshToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
     }
 }
