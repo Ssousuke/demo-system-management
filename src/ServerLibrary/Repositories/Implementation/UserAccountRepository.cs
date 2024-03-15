@@ -85,7 +85,24 @@ namespace ServerLibrary.Repositories.Implementation
 
             string jwtToken = GenerateToken(applicationUser, getRoleName!.Name!);
             string refreshToken = GenerateRefreshToken();
-            return new LoginResponse(Flag: true, Message: "Login successfully", Token: jwtToken, RefreshToken: refreshToken);
+
+            // Save the refresh token to the database
+            var findUser = await context.RefreshTokens.FirstOrDefaultAsync(_ => _.UserId == applicationUser.Id);
+            if (findUser is not null)
+            {
+                findUser!.Token = refreshToken;
+                await context.SaveChangesAsync();
+            }
+            else
+            {
+                await AddToDatabase(new RefreshToken()
+                {
+                    Token = refreshToken,
+                    UserId = applicationUser.Id,
+                });
+            }
+
+            return new LoginResponse(true, "Login successfully", jwtToken, refreshToken);
         }
 
         public async Task<LoginResponse> RefreshTokenAsync(RefreshToken token)
